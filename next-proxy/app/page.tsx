@@ -1,5 +1,7 @@
 import Chat from './chat'
 
+export const dynamic = 'force-dynamic' // 每次请求在服务器读 env，不能被静态预渲染
+
 // 服务端组件：在服务器上读取环境变量，只把「是否已配置」传给客户端，Key 本身永不下发
 export default function Page() {
   const configured = !!process.env.DEEPSEEK_API_KEY
