@@ -33,7 +33,7 @@ function Sources({ sources }: { sources: NonNullable<Message['sources']> }) {
 
 export const MessageItem = memo(function MessageItem({ m, isLast }: { m: Message; isLast: boolean }) {
   const continueGen = useChat((s) => s.continueGen)
-  if (m.role === 'tool') return null // 工具结果已在 assistant 的 ToolCard 中渲染
+  if (m.role === 'tool') return null // 工具消息留在 API 历史中，结果卡片显示在 assistant 消息内部。
   if (m.role === 'user') return <div className="msg user"><div className="bubble">{m.content}</div></div>
   return (
     <div className="msg assistant">

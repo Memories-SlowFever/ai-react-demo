@@ -1,3 +1,8 @@
+/**
+ * 无服务器演示用模型：通过关键词模拟模型回答和 Function Calling 决策，
+ * 再以与真实网络层相同的 StreamEvent 逐段输出。这里不调用外部 API，
+ * 因此适合 GitHub Pages 等纯静态部署，但回答内容和工具数据都是预设模拟。
+ */
 import type { ApiMessage, Settings, StreamEvent } from './types'
 import { safeParse } from './tools'
 
@@ -15,6 +20,7 @@ const wait = (ms: number, signal: AbortSignal) =>
     signal.addEventListener('abort', onAbort, { once: true })
   })
 
+/** 将完整文本切成不等长片段，模拟真实网络逐块返回的体感。 */
 async function* typewriter(text: string, signal: AbortSignal, kind: 'content' | 'reasoning' = 'content') {
   // 故意按 2~4 个字符随机切片，模拟网络分片
   for (let i = 0; i < text.length; ) {
@@ -54,7 +60,11 @@ graph LR
 
 试试问我：**现在几点**、**北京天气**、**查询已发货订单**、**帮我创建一个工单**。`
 
-/** 极简 Mock LLM：按关键词决定走普通回答 / 工具调用 / 基于上下文回答 */
+/**
+ * 根据最近的用户问题和已有 tool/system 消息选择 Mock 分支。
+ * 优先消费上一轮工具结果，其次按关键词模拟工具选择，再处理 RAG 示例引用，
+ * 最后返回普通演示回答；整个生成过程可由 AbortSignal 随时取消。
+ */
 export async function* mockStream(
   messages: ApiMessage[],
   settings: Settings,
@@ -64,7 +74,7 @@ export async function* mockStream(
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
   await wait(300, signal)
 
-  // 工具已返回 → 总结
+  // 工具结果回传后，Mock 生成面向用户的摘要，而不是重复发起工具调用。
   if (last.role === 'tool') {
     const r = safeParse(last.content)
     yield* typewriter('工具结果已拿到，我来总结一下。', signal, 'reasoning')
@@ -78,6 +88,7 @@ export async function* mockStream(
     return
   }
 
+  // 用关键词路由模拟模型的 Function Calling 决策，便于无 Key 演示完整调用链。
   if (settings.enableTools) {
     const call = (name: string, args: object): StreamEvent => ({
       type: 'tool_calls',
@@ -107,7 +118,7 @@ export async function* mockStream(
     }
   }
 
-  // RAG：system 里带了检索到的资料
+  // RAG 切片由 chat store 注入额外 system 消息，Mock 从中取首条作为示例引用。
   const ctx = messages.find((m) => m.role === 'system' && m.content.includes('【知识库资料】'))
   if (ctx) {
     yield* typewriter('检索到相关资料，基于资料作答并标注引用。', signal, 'reasoning')

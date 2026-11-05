@@ -9,7 +9,7 @@ export function ChatPage() {
   const listRef = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
-  // 只有用户停留在底部时才自动滚动，向上翻看历史时不抢滚动条
+  // 只有用户停留在底部时才自动滚动，向上翻看历史时不抢滚动条。
   useEffect(() => {
     const el = listRef.current
     if (el && stick.current) el.scrollTop = el.scrollHeight

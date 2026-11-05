@@ -10,6 +10,7 @@ const TABS = [
 ] as const
 
 export default function App() {
+  // 页面通过 hidden 保持挂载，切换标签不会卸载正在输出的对话或重置画布状态。
   const [tab, setTab] = useState<(typeof TABS)[number][0]>('chat')
   const mock = useChat((s) => s.settings.mock || !s.settings.apiKey)
   return (

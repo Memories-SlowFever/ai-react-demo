@@ -6,6 +6,7 @@ export default function Chat({ disabled }: { disabled: boolean }) {
   const [out, setOut] = useState('')
   const ctrl = useRef<AbortController | null>(null)
 
+  // 发起新请求前取消旧请求；停止按钮会复用同一个 controller 中断读取。
   async function ask() {
     ctrl.current?.abort()
     const c = (ctrl.current = new AbortController())
@@ -15,6 +16,7 @@ export default function Chat({ disabled }: { disabled: boolean }) {
       method: 'POST', signal: c.signal, headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: [{ role: 'user', content: q }] }),
     })
+    // 从代理返回的 SSE 流逐行提取增量文本，保留未完整到达的尾行。
     const reader = res.body!.getReader()
     const dec = new TextDecoder()
     let buf = ''

@@ -1,6 +1,7 @@
 import { useChat } from '../store/chat'
 
 export function SettingsPage() {
+  // 设置由 chat store 持久化；真实模型 Key 留在浏览器，不适合公开部署使用。
   const { settings: s, updateSettings: u } = useChat()
   return (
     <div className="page">

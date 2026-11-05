@@ -12,6 +12,7 @@ import python from 'react-syntax-highlighter/dist/esm/languages/prism/python'
 import css from 'react-syntax-highlighter/dist/esm/languages/prism/css'
 import markup from 'react-syntax-highlighter/dist/esm/languages/prism/markup'
 
+// 轻量版 Prism 只注册项目常见语言，避免把完整语言包都放进首屏。
 for (const [n, l] of Object.entries({ ts, typescript: ts, tsx, js, javascript: js, jsx: tsx, json, bash, sh: bash, python, py: python, css, html: markup }))
   Highlighter.registerLanguage(n, l)
 
@@ -19,6 +20,7 @@ function Mermaid({ code }: { code: string }) {
   const id = 'm' + useId().replace(/:/g, '')
   const [svg, setSvg] = useState('')
   const [err, setErr] = useState('')
+  // Mermaid 采用动态导入并做短暂防抖，流式代码未完成时不必每个字符都重新解析。
   useEffect(() => {
     let cancelled = false
     // 流式输出过程中图表是不完整的，渲染失败时静默等待下一次更新
@@ -63,6 +65,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 }
 
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  // 自定义代码、链接渲染：行内代码保持轻量，代码块交给 Prism，外链新标签打开。
   return (
     <div className="md">
       <ReactMarkdown

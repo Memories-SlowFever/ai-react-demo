@@ -1,4 +1,8 @@
-/** Function Calling：JSON Schema 入参 + 本地实现（模拟数据） */
+/**
+ * Function Calling 定义与本地工具执行器。
+ * toolSchemas 告诉模型可用工具及参数形状；runTool 在浏览器内执行对应逻辑，
+ * 当前天气/订单/工单均为演示数据，不访问真实业务服务。写操作由调用方先确认。
+ */
 
 export const toolSchemas = [
   {
@@ -53,6 +57,7 @@ export const toolSchemas = [
   },
 ] as const
 
+// 写操作与只读查询分开处理，避免模型直接执行有副作用的动作。
 /** 需要用户二次确认（弹表单）的工具 */
 export const confirmTools = new Set(['create_ticket'])
 
@@ -72,6 +77,10 @@ export function safeParse(s: string): Record<string, any> {
   }
 }
 
+/**
+ * 按工具名分发本地实现。未知名称和无效时区转换成结构化错误结果，
+ * 让 Agent 可以把失败结果作为 tool 消息回传，而不是中断整条对话。
+ */
 export function runTool(name: string, args: Record<string, any>): unknown {
   switch (name) {
     case 'get_current_time': {
@@ -102,6 +111,8 @@ export function runTool(name: string, args: Record<string, any>): unknown {
 
 // 用户确认弹窗：执行器 await 一个 Promise，UI 提交表单时 resolve
 const pending = new Map<string, (v: Record<string, any> | null) => void>()
+// 以工具调用 ID 关联暂停中的 Agent 与确认表单；null 表示拒绝或取消。
+// waitConfirm 注册等待者，resolveConfirm 负责唤醒并移除记录。
 export const waitConfirm = (callId: string) => new Promise<Record<string, any> | null>((r) => pending.set(callId, r))
 export const resolveConfirm = (callId: string, v: Record<string, any> | null) => {
   pending.get(callId)?.(v)

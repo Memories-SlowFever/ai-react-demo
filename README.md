@@ -39,6 +39,15 @@ npm install && npm run dev
 - 阶段 5 提供的是代理示例，没有把整个 Vite 应用逐页迁移到 Next。
 - 纯前端直连模型时，API Key 会暴露在浏览器中；GitHub Pages 是静态托管，不能安全保存服务端密钥。需要真实密钥时应使用 `next-proxy/` 或其他受控后端。
 
+## 源码阅读顺序
+- 应用入口与页面切换：`src/main.tsx` → `src/App.tsx`。
+- 对话链路：`src/pages/ChatPage.tsx` → `src/store/chat.ts` → `src/lib/stream.ts`；真实模型与本地 Mock 统一输出流事件，工具由 `src/lib/tools.ts` 执行。
+- 知识库链路：`src/pages/KnowledgePage.tsx` → `src/store/kb.ts` → `src/lib/indexedDbStorage.ts`；聊天与工作流复用同一套本地检索。
+- 工作流链路：`src/pages/FlowPage.tsx`；包含画布数据校验、JSON 导入导出及浏览器内的单路径执行器。
+- 类型边界：`src/lib/types.ts` 定义 UI 消息、模型请求和流事件之间的数据形状。
+
+核心模块的注释侧重职责边界、数据流、状态变化及取消/错误处理；UI 组件和样式只在存在关键行为或布局分组时补充说明，避免逐行重复代码含义。
+
 ## GitHub Pages 部署
 
 仓库已配置 GitHub Actions：向 `main` 推送提交后，会自动安装依赖、运行 `npm run build` 并发布 `dist/` 到 GitHub Pages，无需手动生成或提交 `dist/`。部署流程见 `.github/workflows/deploy.yml`。首次启用时，需在仓库 **Settings → Pages → Build and deployment** 中选择 **GitHub Actions**。

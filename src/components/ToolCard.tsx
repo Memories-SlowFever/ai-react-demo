@@ -11,6 +11,7 @@ const LABEL: Record<string, string> = {
 }
 
 function Result({ name, data }: { name: string; data: any }) {
+  // 按工具类型展示易读结果；未知或错误结果回退为格式化 JSON。
   if (name === 'get_current_time' && data.local)
     return <div className="clock">{data.local}<small>{data.timezone}</small></div>
   if (name === 'get_weather' && data.city)
@@ -31,6 +32,7 @@ function ConfirmForm({ call }: { call: ToolCall }) {
   const init = safeParse(call.arguments)
   const [v, setV] = useState({ title: init.title ?? '', priority: init.priority ?? 'medium', detail: init.detail ?? '' })
   const confirm = useChat((s) => s.confirmTool)
+  // 提交把用户最终确认的参数回传给暂停中的 Agent，拒绝则传 null。
   return (
     <form className="confirm" onSubmit={(e) => { e.preventDefault(); confirm(call.id, v) }}>
       <div className="hint">模型请求创建工单，请确认参数：</div>

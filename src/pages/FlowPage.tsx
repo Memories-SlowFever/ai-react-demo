@@ -1,3 +1,9 @@
+/**
+ * 可视化工作流编辑器与轻量运行器。
+ * 画布定义节点/连线，JSON 导入导出负责交换流程结构；运行器先验证为单路径，
+ * 再把每个节点输出放入 cur 并沿唯一出边传给下一个节点。它是浏览器端 Demo，
+ * 不具备分支调度、服务器执行、凭据隔离或后台任务能力。
+ */
 import { useCallback, useRef, useState } from 'react'
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position, addEdge, useEdgesState, useNodesState, useReactFlow,
@@ -13,9 +19,9 @@ type Kind = 'start' | 'llm' | 'kb' | 'tool' | 'end'
 interface NData extends Record<string, unknown> {
   kind: Kind
   label: string
-  prompt?: string // llm：支持 {{input}}
+  prompt?: string // LLM 输入模板；运行时将所有 {{input}} 替换为上游节点文本。
   tool?: string
-  args?: string // tool：JSON 模板，支持 {{input}}
+  args?: string // 工具参数 JSON 模板；替换占位符后再解析并传给本地工具。
   status?: 'idle' | 'running' | 'done' | 'error'
   output?: string
 }
@@ -56,6 +62,8 @@ const MAX_FLOW_FILE_SIZE = 1024 * 1024
 const KINDS = new Set<Kind>(['start', 'llm', 'kb', 'tool', 'end'])
 const TOOLS = new Set(['get_current_time', 'get_weather', 'query_orders'])
 
+// 导入文件视为不可信输入：校验版本、数量、ID、坐标和节点配置，并仅复制白名单字段。
+/** 将外部 JSON 解析成画布白名单模型；拒绝超限/不合法引用，且不信任导入状态字段。 */
 function parseWorkflow(value: unknown): { nodes: FNode[]; edges: Edge[] } {
   if (!value || typeof value !== 'object') throw new Error('文件内容必须是 JSON 对象')
   const data = value as Record<string, unknown>
@@ -107,7 +115,13 @@ function parseWorkflow(value: unknown): { nodes: FNode[]; edges: Edge[] } {
   return { nodes, edges }
 }
 
+/**
+ * 执行前验证结构约束并从唯一 start 沿出边遍历。
+ * 返回所有可修复错误而不是遇到首个错误就中止；无分支约束让当前顺序执行器
+ * 能确定唯一下一节点，同时检查循环、断链、不可达节点和 end 可达性。
+ */
 function validateWorkflow(nodes: FNode[], edges: Edge[]): string[] {
+  // 当前执行器只支持单一路径，因此运行前沿唯一出边检查整条执行链。
   const errors: string[] = []
   const starts = nodes.filter((n) => n.data.kind === 'start')
   const ends = nodes.filter((n) => n.data.kind === 'end')
@@ -158,6 +172,7 @@ function validateWorkflow(nodes: FNode[], edges: Edge[]): string[] {
 }
 
 function load(): { nodes: FNode[]; edges: Edge[] } {
+  // 本地只恢复画布结构；上次运行状态和输出属于临时数据，重新打开时清空。
   try {
     const v = JSON.parse(localStorage.getItem(STORE_KEY) ?? '')
     if (v.nodes && v.edges) return {
@@ -184,6 +199,7 @@ function Canvas() {
   const onConnect = useCallback((c: Connection) => setEdges((es) => addEdge({ ...c, animated: true }, es)), [setEdges])
   const patch = (id: string, p: Partial<NData>) => setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...p } } : n)))
 
+  // 把屏幕坐标换成画布坐标，保证缩放或平移后节点仍落在拖放位置。
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const kind = e.dataTransfer.getData('application/node-kind') as Kind
@@ -195,6 +211,7 @@ function Canvas() {
 
   const save = () => { localStorage.setItem(STORE_KEY, JSON.stringify({ nodes, edges })); setLog('已保存到 localStorage') }
 
+  // 导出带格式标识和版本号的 JSON，供导入时做兼容性校验。
   const exportWorkflow = () => {
     const payload = { format: FLOW_FORMAT, version: FLOW_VERSION, exportedAt: new Date().toISOString(), nodes, edges }
     const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }))
@@ -206,6 +223,7 @@ function Canvas() {
     setLog('工作流已导出')
   }
 
+  // 先限文件大小，再解析和校验；全部通过后才替换当前画布。
   const importWorkflow = async (file?: File) => {
     if (!file) return
     if (file.size > MAX_FLOW_FILE_SIZE) {
@@ -223,7 +241,8 @@ function Canvas() {
     }
   }
 
-  /** 沿连线从 start 依次执行（简化：每个节点只取第一条出边，即线性链路） */
+  /** 从 start 沿连线执行；各节点将结果写回 cur，作为下游节点输入。 */
+  /** 验证通过后顺序执行节点；每种节点读取 cur、更新 cur，并写入自身运行状态/输出。 */
   const run = async () => {
     const errors = validateWorkflow(nodes, edges)
     if (errors.length) {
@@ -243,8 +262,10 @@ function Canvas() {
         visited.add(node.id)
         const d: NData = node.data
         patch(node.id, { status: 'running' })
+        // 模板中的占位符绑定上一节点输出，构成节点间的数据传递。
         const fill = (t = '') => t.replaceAll('{{input}}', cur)
         if (d.kind === 'kb') {
+          // 检索未命中时透传原输入，使后续 LLM 仍能看到用户问题，而不是空字符串。
           const kb = useKB.getState()
           const r = retrieve(cur, kb.docs, kb.cfg)
           cur = r.length ? r.map((s, i) => `[${i + 1}] ${s.text}`).join('\n') + `\n\n问题：${cur}` : cur
@@ -255,6 +276,7 @@ function Canvas() {
           patch(node.id, { output: out })
         } else if (d.kind === 'llm') {
           let text = ''
+          // 工作流 LLM 复用聊天设置和 streamChat，但禁用工具调用以保持节点语义单一。
           const settings = { ...useChat.getState().settings, enableTools: false }
           for await (const ev of streamChat(settings, [{ role: 'user', content: fill(d.prompt) }], c.signal)) {
             if (ev.type === 'content') { text += ev.text; patch(node.id, { output: text }) }
@@ -262,6 +284,7 @@ function Canvas() {
           cur = text
         } else if (d.kind === 'end') patch(node.id, { output: cur })
         patch(node.id, { status: 'done' })
+        // 校验保证至多一条出边；找不到后继代表已到 end 或流程不再有下一步。
         const next: Edge | undefined = edges.find((e) => e.source === node!.id)
         node = nodes.find((n) => n.id === next?.target)
       }

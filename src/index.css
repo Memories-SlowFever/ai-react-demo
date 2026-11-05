@@ -1,3 +1,4 @@
+/* 基础颜色、字体与控件默认样式 */
 :root { color-scheme: dark; --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --text:#e6e8ee; --dim:#8b93a5; --accent:#6c8cff; --danger:#ff6b6b; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
@@ -20,6 +21,7 @@ label.switch { display: flex; gap: 6px; align-items: center; }
 .row { display: flex; gap: 8px; align-items: center; }
 .row.between { justify-content: space-between; }
 
+/* 页面外框与顶部导航 */
 .app { display: flex; flex-direction: column; height: 100%; }
 .topbar { display: flex; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .topbar b { margin-right: 12px; }
@@ -29,6 +31,7 @@ main { flex: 1; min-height: 0; }
 .fill { height: 100%; }
 [hidden] { display: none !important; }
 
+/* 多会话侧栏、消息滚动区与输入栏 */
 .chat-layout { display: flex; height: 100%; }
 .sidebar { width: 240px; border-right: 1px solid var(--line); padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background: var(--panel); }
 .session { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 6px; cursor: pointer; overflow: hidden; white-space: nowrap; }
@@ -50,6 +53,7 @@ main { flex: 1; min-height: 0; }
 .composer button { min-width: 72px; }
 .error { color: var(--danger); margin-top: 8px; display: flex; gap: 10px; align-items: center; }
 
+/* Markdown、代码高亮与 Mermaid 图表 */
 .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
 .md table { border-collapse: collapse; margin: 8px 0; } .md th, .md td { border: 1px solid var(--line); padding: 4px 10px; }
 .md blockquote, .source blockquote { border-left: 3px solid var(--accent); margin: 6px 0; padding: 2px 12px; color: var(--dim); }
@@ -62,6 +66,7 @@ code.inline { background: #232834; padding: 1px 5px; border-radius: 4px; }
 .mermaid { background: #fff1; border-radius: 8px; padding: 10px; overflow-x: auto; margin: 10px 0; }
 .code-fallback { background: #1e1e1e; padding: 10px; border-radius: 8px; overflow-x: auto; }
 
+/* 思考过程、工具调用卡片和 RAG 引用 */
 .thinking { border: 1px dashed var(--line); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; color: var(--dim); font-size: 13px; }
 .thinking-head { cursor: pointer; display: flex; justify-content: space-between; }
 .thinking-body { margin-top: 6px; white-space: pre-wrap; }
@@ -82,6 +87,7 @@ code.inline { background: #232834; padding: 1px 5px; border-radius: 4px; }
 .retrieval-head b { overflow-wrap: anywhere; }
 .score { color: var(--accent); margin-left: 8px; font-size: 12px; }
 
+/* 知识库与设置页通用布局 */
 .page { display: flex; gap: 16px; padding: 16px; height: 100%; overflow: auto; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; width: 360px; flex: none; align-self: flex-start; max-height: 100%; overflow-y: auto; }
 .panel.grow { flex: 1; width: auto; } .panel.settings { max-width: 640px; }
@@ -91,6 +97,7 @@ code.inline { background: #232834; padding: 1px 5px; border-radius: 4px; }
 .chunk { border-left: 3px solid var(--line); padding: 6px 12px; margin: 8px 0; white-space: pre-wrap; } .chunk span { color: var(--accent); margin-right: 8px; }
 .full { margin-bottom: 8px; }
 
+/* 工作流画布、节点调色板和配置面板 */
 .flow { display: flex; height: 100%; }
 .palette, .config { width: 240px; padding: 12px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: none; }
 .palette { border-right: 1px solid var(--line); } .config { border-left: 1px solid var(--line); width: 280px; }

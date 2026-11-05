@@ -6,6 +6,7 @@ permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: true }
 jobs:
   build:
+    # CI 在 GitHub runner 上构建静态产物；BASE_PATH 对应仓库 Pages 子路径。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +20,7 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
   deploy:
+    # 仅在构建成功后发布 dist artifact 到 GitHub Pages。
     needs: build
     runs-on: ubuntu-latest
     environment: { name: github-pages, url: '${{ steps.d.outputs.page_url }}' }

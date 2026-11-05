@@ -6,6 +6,7 @@ export function KnowledgePage() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const input = useRef<HTMLInputElement>(null)
+  // 等本地 IndexedDB 完成恢复后才运行检索，避免初始空状态误导用户。
   const candidates = q.trim() && hydrated ? inspectRetrieval(q, docs, cfg) : []
   const selectedCount = candidates.filter((r) => r.decision === 'selected').length
   const open = docs.find((d) => d.id === openId)
