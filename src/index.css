@@ -75,6 +75,11 @@ code.inline { background: #232834; padding: 1px 5px; border-radius: 4px; }
 .confirm { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .sources { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; }
 .source { background: #1b1f28; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin: 6px 0; cursor: pointer; }
+.retrieval-result { cursor: default; }
+.retrieval-result.below-threshold { opacity: .58; }
+.retrieval-result.outside-top-k { border-style: dashed; }
+.retrieval-head { display: flex; justify-content: space-between; gap: 12px; }
+.retrieval-head b { overflow-wrap: anywhere; }
 .score { color: var(--accent); margin-left: 8px; font-size: 12px; }
 
 .page { display: flex; gap: 16px; padding: 16px; height: 100%; overflow: auto; }
@@ -89,6 +94,7 @@ code.inline { background: #232834; padding: 1px 5px; border-radius: 4px; }
 .flow { display: flex; height: 100%; }
 .palette, .config { width: 240px; padding: 12px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: none; }
 .palette { border-right: 1px solid var(--line); } .config { border-left: 1px solid var(--line); width: 280px; }
+.flow-file-actions > button { flex: 1; padding-inline: 6px; }
 .canvas { flex: 1; }
 .pitem { padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; cursor: grab; background: #1d212a; }
 .fnode { background: #1d212a; border: 1.5px solid var(--line); border-radius: 8px; padding: 8px 12px; min-width: 130px; max-width: 200px; }

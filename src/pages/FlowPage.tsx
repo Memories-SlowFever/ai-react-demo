@@ -50,10 +50,120 @@ const initEdges: Edge[] = [
 ]
 
 const STORE_KEY = 'ai-react-demo:flow'
+const FLOW_FORMAT = 'ai-react-demo-flow'
+const FLOW_VERSION = 1
+const MAX_FLOW_FILE_SIZE = 1024 * 1024
+const KINDS = new Set<Kind>(['start', 'llm', 'kb', 'tool', 'end'])
+const TOOLS = new Set(['get_current_time', 'get_weather', 'query_orders'])
+
+function parseWorkflow(value: unknown): { nodes: FNode[]; edges: Edge[] } {
+  if (!value || typeof value !== 'object') throw new Error('文件内容必须是 JSON 对象')
+  const data = value as Record<string, unknown>
+  if (data.format !== FLOW_FORMAT || data.version !== FLOW_VERSION) throw new Error('不支持的工作流文件格式或版本')
+  if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) throw new Error('工作流缺少节点或连线数据')
+  if (data.nodes.length < 1 || data.nodes.length > 200 || data.edges.length > 1000) throw new Error('节点或连线数量超出限制')
+
+  const ids = new Set<string>()
+  const nodes = data.nodes.map((raw): FNode => {
+    if (!raw || typeof raw !== 'object') throw new Error('节点格式无效')
+    const node = raw as Record<string, unknown>
+    const config = node.data as Record<string, unknown> | null
+    const position = node.position as Record<string, unknown> | null
+    if (typeof node.id !== 'string' || !node.id.trim() || ids.has(node.id)) throw new Error('节点 ID 缺失或重复')
+    if (!position || typeof position.x !== 'number' || !Number.isFinite(position.x) || typeof position.y !== 'number' || !Number.isFinite(position.y)) {
+      throw new Error(`节点「${node.id}」坐标无效`)
+    }
+    if (!config || typeof config !== 'object' || !KINDS.has(config.kind as Kind) || typeof config.label !== 'string' || !config.label.trim()) {
+      throw new Error(`节点「${node.id}」配置无效`)
+    }
+    if (config.kind === 'llm' && config.prompt !== undefined && typeof config.prompt !== 'string') throw new Error(`节点「${node.id}」Prompt 无效`)
+    if (config.kind === 'tool') {
+      if (typeof config.tool !== 'string' || !TOOLS.has(config.tool)) throw new Error(`节点「${node.id}」工具类型无效`)
+      if (config.args !== undefined && typeof config.args !== 'string') throw new Error(`节点「${node.id}」参数模板无效`)
+    }
+    ids.add(node.id)
+    const cleanData: NData = {
+      kind: config.kind as Kind,
+      label: config.label.slice(0, 100),
+      ...(typeof config.prompt === 'string' ? { prompt: config.prompt.slice(0, 10000) } : {}),
+      ...(typeof config.tool === 'string' ? { tool: config.tool } : {}),
+      ...(typeof config.args === 'string' ? { args: config.args.slice(0, 10000) } : {}),
+      status: 'idle',
+    }
+    return { id: node.id, type: 'agent', position: { x: position.x, y: position.y }, data: cleanData }
+  })
+
+  const edgeIds = new Set<string>()
+  const edges = data.edges.map((raw): Edge => {
+    if (!raw || typeof raw !== 'object') throw new Error('连线格式无效')
+    const edge = raw as Record<string, unknown>
+    if (typeof edge.id !== 'string' || !edge.id.trim() || edgeIds.has(edge.id)) throw new Error('连线 ID 缺失或重复')
+    if (typeof edge.source !== 'string' || typeof edge.target !== 'string' || !ids.has(edge.source) || !ids.has(edge.target)) {
+      throw new Error(`连线「${edge.id}」引用了不存在的节点`)
+    }
+    edgeIds.add(edge.id)
+    return { id: edge.id, source: edge.source, target: edge.target, animated: true }
+  })
+  return { nodes, edges }
+}
+
+function validateWorkflow(nodes: FNode[], edges: Edge[]): string[] {
+  const errors: string[] = []
+  const starts = nodes.filter((n) => n.data.kind === 'start')
+  const ends = nodes.filter((n) => n.data.kind === 'end')
+  if (starts.length !== 1) errors.push(`需要且只能有一个开始节点（当前 ${starts.length} 个）`)
+  if (ends.length !== 1) errors.push(`需要且只能有一个结束节点（当前 ${ends.length} 个）`)
+
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const outgoing = new Map<string, Edge[]>()
+  const incoming = new Map<string, Edge[]>()
+  for (const edge of edges) {
+    if (!byId.has(edge.source) || !byId.has(edge.target)) {
+      errors.push(`连线「${edge.id}」引用了不存在的节点`)
+      continue
+    }
+    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge])
+    incoming.set(edge.target, [...(incoming.get(edge.target) ?? []), edge])
+  }
+
+  for (const node of nodes) {
+    if ((outgoing.get(node.id)?.length ?? 0) > 1) errors.push(`节点「${node.data.label}」有多条出边；当前执行器只支持单一路径`)
+    if (node.data.kind === 'start' && (incoming.get(node.id)?.length ?? 0) > 0) errors.push('开始节点不能有入边')
+    if (node.data.kind === 'end' && (outgoing.get(node.id)?.length ?? 0) > 0) errors.push(`结束节点「${node.data.label}」不能有出边`)
+  }
+
+  if (starts.length === 1) {
+    const visited = new Set<string>()
+    let current: FNode | undefined = starts[0]
+    while (current) {
+      if (visited.has(current.id)) {
+        errors.push(`检测到循环：执行路径回到了「${current.data.label}」`)
+        break
+      }
+      visited.add(current.id)
+      if (current.data.kind === 'end') break
+      const nextEdge = outgoing.get(current.id)?.[0]
+      if (!nextEdge) {
+        errors.push(`执行路径在「${current.data.label}」中断，无法到达结束节点`)
+        break
+      }
+      current = byId.get(nextEdge.target)
+    }
+    const unreachable = nodes.filter((n) => !visited.has(n.id))
+    if (unreachable.length) errors.push(`存在从开始节点不可达的节点：${unreachable.map((n) => n.data.label).join('、')}`)
+    if (ends.length === 1 && !visited.has(ends[0].id)) errors.push('执行路径无法到达结束节点')
+  }
+
+  return [...new Set(errors)]
+}
+
 function load(): { nodes: FNode[]; edges: Edge[] } {
   try {
     const v = JSON.parse(localStorage.getItem(STORE_KEY) ?? '')
-    if (v.nodes) return { nodes: v.nodes.map((n: FNode) => ({ ...n, data: { ...n.data, status: 'idle', output: undefined } })), edges: v.edges }
+    if (v.nodes && v.edges) return {
+      nodes: v.nodes.map((n: FNode) => ({ ...n, data: { ...n.data, status: 'idle', output: undefined } })),
+      edges: v.edges,
+    }
   } catch { /* ignore */ }
   return { nodes: initNodes, edges: initEdges }
 }
@@ -67,6 +177,7 @@ function Canvas() {
   const [log, setLog] = useState('')
   const [running, setRunning] = useState(false)
   const ctrl = useRef<AbortController | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
   const { screenToFlowPosition } = useReactFlow()
   const sel = nodes.find((n) => n.id === selId)
 
@@ -84,10 +195,43 @@ function Canvas() {
 
   const save = () => { localStorage.setItem(STORE_KEY, JSON.stringify({ nodes, edges })); setLog('已保存到 localStorage') }
 
+  const exportWorkflow = () => {
+    const payload = { format: FLOW_FORMAT, version: FLOW_VERSION, exportedAt: new Date().toISOString(), nodes, edges }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'ai-react-workflow.json'
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setLog('工作流已导出')
+  }
+
+  const importWorkflow = async (file?: File) => {
+    if (!file) return
+    if (file.size > MAX_FLOW_FILE_SIZE) {
+      setLog('导入失败：文件不能超过 1 MB')
+      return
+    }
+    try {
+      const parsed = parseWorkflow(JSON.parse(await file.text()))
+      setNodes(parsed.nodes)
+      setEdges(parsed.edges)
+      setSelId(null)
+      setLog(`已导入 ${parsed.nodes.length} 个节点和 ${parsed.edges.length} 条连线；点击「保存」写入本地`)
+    } catch (e) {
+      setLog(`导入失败：${(e as Error).message}`)
+    }
+  }
+
   /** 沿连线从 start 依次执行（简化：每个节点只取第一条出边，即线性链路） */
   const run = async () => {
+    const errors = validateWorkflow(nodes, edges)
+    if (errors.length) {
+      setLog(`运行前校验未通过：\n${errors.map((e) => `• ${e}`).join('\n')}`)
+      return
+    }
     const start = nodes.find((n) => n.data.kind === 'start')
-    if (!start) return setLog('缺少「开始」节点')
+    if (!start) return
     setNodes((ns) => ns.map((n) => ({ ...n, data: { ...n.data, status: 'idle', output: undefined } })))
     const c = (ctrl.current = new AbortController())
     setRunning(true); setLog('')
@@ -141,6 +285,11 @@ function Canvas() {
         <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={3} placeholder="工作流输入" />
         {running ? <button className="danger" onClick={() => ctrl.current?.abort()}>■ 停止</button> : <button className="primary" onClick={run}>▶ 运行</button>}
         <button onClick={save}>保存</button>
+        <div className="row flow-file-actions">
+          <button onClick={exportWorkflow}>导出 JSON</button>
+          <button onClick={() => fileInput.current?.click()}>导入 JSON</button>
+          <input ref={fileInput} type="file" accept=".json,application/json" hidden onChange={(e) => { void importWorkflow(e.target.files?.[0]); e.target.value = '' }} />
+        </div>
         <button onClick={() => { setNodes(initNodes); setEdges(initEdges); setLog('') }}>重置</button>
         {log && <pre className="flow-log">{log}</pre>}
       </aside>

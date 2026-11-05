@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { indexedDbStorage } from '../lib/indexedDbStorage'
 import type { Source } from '../lib/types'
 
 export interface Chunk { idx: number; text: string }
@@ -13,10 +14,16 @@ export interface Doc {
   error?: string
 }
 export interface KBConfig { enabled: boolean; topK: number; threshold: number; chunkSize: number; selected: string[] | null }
+export interface RetrievalCandidate extends Source {
+  matchedTerms: string[]
+  decision: 'selected' | 'below-threshold' | 'outside-top-k'
+}
 
 interface KBState {
   docs: Doc[]
   cfg: KBConfig
+  hydrated: boolean
+  setHydrated: (value: boolean) => void
   setCfg: (p: Partial<KBConfig>) => void
   upload: (file: File) => Promise<void>
   addText: (name: string, text: string) => void
@@ -57,8 +64,8 @@ const tokenize = (s: string) => {
   return t
 }
 
-/** TF-IDF 余弦相似度 → topK + 阈值过滤 */
-export function retrieve(query: string, docs: Doc[], cfg: KBConfig): Source[] {
+/** TF-IDF 候选解释：保留被阈值或 Top K 排除的结果，供检索调试使用。 */
+export function inspectRetrieval(query: string, docs: Doc[], cfg: KBConfig): RetrievalCandidate[] {
   const pool = docs
     .filter((d) => d.status === 'ready' && (!cfg.selected || cfg.selected.includes(d.id)))
     .flatMap((d) => d.chunks.map((c) => ({ d, c, toks: tokenize(c.text) })))
@@ -74,16 +81,30 @@ export function retrieve(query: string, docs: Doc[], cfg: KBConfig): Source[] {
   const q = vec(tokenize(query))
   const norm = (m: Map<string, number>) => Math.sqrt([...m.values()].reduce((a, b) => a + b * b, 0)) || 1
   const qn = norm(q)
-  return pool
+  const ranked = pool
     .map(({ d, c, toks }) => {
       const v = vec(toks)
       let dot = 0
       for (const [w, x] of q) dot += x * (v.get(w) ?? 0)
-      return { docId: d.id, docName: d.name, chunkIdx: c.idx, text: c.text, score: dot / (qn * norm(v)) }
+      const matchedTerms = [...q.keys()].filter((w) => v.has(w)).sort()
+      return { docId: d.id, docName: d.name, chunkIdx: c.idx, text: c.text, score: dot / (qn * norm(v)), matchedTerms }
     })
-    .filter((s) => s.score >= cfg.threshold)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, cfg.topK)
+    .sort((a, b) => b.score - a.score || a.docName.localeCompare(b.docName) || a.chunkIdx - b.chunkIdx)
+  const eligible = ranked.filter((candidate) => candidate.score >= cfg.threshold)
+  const selected = new Set(eligible.slice(0, cfg.topK).map((candidate) => `${candidate.docId}:${candidate.chunkIdx}`))
+  return ranked.map((candidate) => ({
+    ...candidate,
+    decision: candidate.score < cfg.threshold
+      ? 'below-threshold'
+      : selected.has(`${candidate.docId}:${candidate.chunkIdx}`) ? 'selected' : 'outside-top-k',
+  }))
+}
+
+/** TF-IDF 余弦相似度 → threshold + topK。 */
+export function retrieve(query: string, docs: Doc[], cfg: KBConfig): Source[] {
+  return inspectRetrieval(query, docs, cfg)
+    .filter((candidate) => candidate.decision === 'selected')
+    .map(({ matchedTerms: _matchedTerms, decision: _decision, ...source }) => source)
 }
 
 const SAMPLE = `React 18 引入了并发渲染（Concurrent Rendering），核心是可中断的渲染过程。
@@ -103,6 +124,8 @@ export const useKB = create<KBState>()(
       return {
         docs: [],
         cfg: { enabled: true, topK: 3, threshold: 0.1, chunkSize: 200, selected: null },
+        hydrated: false,
+        setHydrated: (hydrated) => set({ hydrated }),
         setCfg: (p) => set((s) => ({ cfg: { ...s.cfg, ...p } })),
         addText: (name, text) =>
           set((s) => ({ docs: [...s.docs, { id: uid(), name, size: text.length, status: 'ready', progress: 100, chunks: splitChunks(text, s.cfg.chunkSize) }] })),
@@ -132,6 +155,9 @@ export const useKB = create<KBState>()(
     },
     {
       name: 'ai-react-demo:kb',
+      storage: createJSONStorage(() => indexedDbStorage),
+      partialize: (state) => ({ docs: state.docs, cfg: state.cfg }),
+      onRehydrateStorage: () => (state) => state?.setHydrated(true),
       merge: (p, cur) => {
         const s = { ...cur, ...(p as Partial<KBState>) }
         s.docs = s.docs.map((d) => (d.status === 'uploading' || d.status === 'parsing' ? { ...d, status: 'error' as const, error: '上传中断' } : d))
